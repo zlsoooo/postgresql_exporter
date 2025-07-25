@@ -21,6 +21,9 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/prometheus/client_golang/prometheus"
+	
+    "github.com/go-kit/log"
+    "github.com/go-kit/log/level"
 )
 
 // Server describes a connection to Postgres.
@@ -145,6 +148,8 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 		return nil
 	}
 
+	var Logger = log.NewNopLogger() 
+
 	err = fmt.Errorf("queryNamespaceMappings errors encountered")
 	for namespace, errStr := range errMap {
 		// 로그로 에러 출력
@@ -152,7 +157,7 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 
 		// fallbackMetrics 호출하여 기본값(-1) 메트릭 수집
 		if mapping, ok := s.metricMap[namespace]; ok {
-			fallback := fallbackMetrics(namespace, mapping, nil)
+			fallback := fallbackMetrics(namespace, mapping)
 			for _, metric := range fallback {
 				ch <- metric
 			}
