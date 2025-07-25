@@ -148,6 +148,15 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 		return nil
 	}
 
+	for namespace := range errMap {
+		if mapping, ok := s.metricMap[namespace]; ok {
+			fallback := fallbackMetrics(namespace, mapping)
+			for _, metric := range fallback {
+				ch <- metric
+			}
+		}
+	}
+
 	var Logger = log.NewNopLogger() 
 
 	err = fmt.Errorf("queryNamespaceMappings errors encountered")
