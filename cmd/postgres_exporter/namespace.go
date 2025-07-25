@@ -75,7 +75,9 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 
 	metrics := make([]prometheus.Metric, 0)
 
+	hasRow := false
 	for rows.Next() {
+		hasRow = true
 		err = rows.Scan(scanArgs...)
 		if err != nil {
 			return []prometheus.Metric{}, []error{}, errors.New(fmt.Sprintln("Error retrieving rows:", namespace, err))
@@ -178,50 +180,41 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 		}
 	}
 
+	if !hasRow {
+		labels := make([]string, len(mapping.labels))
+		for i, label := range mapping.labels {
+			switch label {
+			case "node_id":
+				labels[i] = "0"
+			case "node_name":
+				labels[i] = "no-node"
+			case "type":
+				labels[i] = "unknown"
+			case "location":
+				labels[i] = ""
+			case "error":
+				labels[i] = "postgresql is down"
+			default:
+				labels[i] = "unknown"
+			}
+		}
 
-	hasRow := false
-for rows.Next() {
-    hasRow = true
-    ...
-}
+		for columnName, metricMapping := range mapping.columnMappings {
+			if metricMapping.discard || metricMapping.histogram {
+				continue
+			}
 
-// 결과가 없을 경우 fallback metric 수집
-if !hasRow {
-    labels := make([]string, len(mapping.labels))
-    for i, label := range mapping.labels {
-        switch label {
-        case "node_id":
-            labels[i] = "0"
-        case "node_name":
-            labels[i] = "no-node"
-        case "type":
-            labels[i] = "unknown"
-        case "location":
-            labels[i] = ""
-        case "error":
-            labels[i] = "postgresql is down"
-        default:
-            labels[i] = "unknown"
-        }
-    }
-
-    for columnName, metricMapping := range mapping.columnMappings {
-        if metricMapping.discard || metricMapping.histogram {
-            continue
-        }
-
-        metric := prometheus.MustNewConstMetric(
-            metricMapping.desc,
-            metricMapping.vtype,
-            -1, // fallback 값
-            labels...,
-        )
-        metrics = append(metrics, metric)
-    }
-}
-
+			metric := prometheus.MustNewConstMetric(
+				metricMapping.desc,
+				metricMapping.vtype,
+				-1, // fallback 값
+				labels...,
+			)
+			metrics = append(metrics, metric)
+		}
+	}
 	
-
+	
 	return metrics, nonfatalErrors, nil
 }
 
