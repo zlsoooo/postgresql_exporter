@@ -144,10 +144,24 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 	if len(errMap) == 0 {
 		return nil
 	}
+
 	err = fmt.Errorf("queryNamespaceMappings errors encountered")
 	for namespace, errStr := range errMap {
+		// 로그로 에러 출력
+		level.Error(Logger).Log("msg", "Namespace query failed", "namespace", namespace, "err", errStr)
+
+		// fallbackMetrics 호출하여 기본값(-1) 메트릭 수집
+		if mapping, ok := s.metricMap[namespace]; ok {
+			fallback := fallbackMetrics(namespace, mapping, nil)
+			for _, metric := range fallback {
+				ch <- metric
+			}
+		}
+
+		// 오류 누적
 		err = fmt.Errorf("%s, namespace: %s error: %s", err, namespace, errStr)
 	}
+
 	return err
 }
 

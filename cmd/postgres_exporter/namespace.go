@@ -253,33 +253,41 @@ func queryNamespaceMappings(ch chan<- prometheus.Metric, server *Server) map[str
 }
 
 func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.Metric {
-	labels := make([]string, len(mapping.labels))
-	for i, label := range mapping.labels {
-		switch label {
-		case "node_id":
-			labels[i] = "0"
-		case "node_name":
-			labels[i] = "no-node"
-		case "type":
-			labels[i] = "unknown"
-		case "location":
-			labels[i] = ""
-		case "error":
-			labels[i] = "postgresql is down"
-		default:
-			labels[i] = "unknown"
-		}
-	}
+    labels := make([]string, len(mapping.labels))
+    for i, label := range mapping.labels {
+        switch label {
+        case "node_id":
+            labels[i] = "0"
+        case "node_name":
+            labels[i] = "no-node"
+        case "type":
+            labels[i] = "unknown"
+        case "location":
+            labels[i] = ""
+        case "error":
+            labels[i] = "postgresql is down"
+        default:
+            labels[i] = "unknown"
+        }
+    }
 
-	metrics := make([]prometheus.Metric, 0)
-	for _, metricMapping := range mapping.columnMappings {
-		if metricMapping.discard || metricMapping.histogram {
-			continue
-		}
-		m := prometheus.MustNewConstMetric(metricMapping.desc, metricMapping.vtype, -1, labels...)
-		metrics = append(metrics, m)
-	}
-	return metrics
+    logger.Info("fallbackMetrics labels 확인", "namespace", namespace, "labels", mapping.labels, "values", labels)
+
+    metrics := make([]prometheus.Metric, 0)
+    for _, metricMapping := range mapping.columnMappings {
+        if metricMapping.discard || metricMapping.histogram {
+            continue
+        }
+
+        // 안전하게 metric 생성 여부 확인
+        m, err := prometheus.NewConstMetric(metricMapping.desc, metricMapping.vtype, -1, labels...)
+        if err != nil {
+            logger.Error("메트릭 생성 실패", "desc", metricMapping.desc.String(), "error", err)
+            continue
+        }
+        metrics = append(metrics, m)
+    }
+    return metrics
 }
 
 
