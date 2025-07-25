@@ -27,55 +27,45 @@ import (
 // Query within a namespace mapping and emit metrics. Returns fatal errors if
 // the scrape fails, and a slice of errors if they were non-fatal.
 func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNamespace) ([]prometheus.Metric, []error, error) {
-	// Check for a query override for this namespace
 	query, found := server.queryOverrides[namespace]
 
-	// Was this query disabled (i.e. nothing sensible can be queried on cu
-	// version of PostgreSQL?
 	if query == "" && found {
-		// Return success (no pertinent data)
 		return []prometheus.Metric{}, []error{}, nil
 	}
 
-	// Don't fail on a bad scrape of one metric
 	var rows *sql.Rows
 	var err error
 
 	if !found {
-		// I've no idea how to avoid this properly at the moment, but this is
-		// an admin tool so you're not injecting SQL right?
-		rows, err = server.db.Query(fmt.Sprintf("SELECT * FROM %s;", namespace)) // nolint: gas
+		rows, err = server.db.Query(fmt.Sprintf("SELECT * FROM %s;", namespace))
 	} else {
 		rows, err = server.db.Query(query)
 	}
 	if err != nil {
-		return []prometheus.Metric{}, []error{}, fmt.Errorf("Error running query on database %q: %s %v", server, namespace, err)
+		return fallbackMetrics(namespace, mapping, err), nil, nil
 	}
-	defer rows.Close() // nolint: errcheck
+	defer rows.Close()
 
-	var columnNames []string
-	columnNames, err = rows.Columns()
+	columnNames, err := rows.Columns()
 	if err != nil {
 		return []prometheus.Metric{}, []error{}, errors.New(fmt.Sprintln("Error retrieving column list for: ", namespace, err))
 	}
 
-	// Make a lookup map for the column indices
-	var columnIdx = make(map[string]int, len(columnNames))
+	columnIdx := make(map[string]int, len(columnNames))
 	for i, n := range columnNames {
 		columnIdx[n] = i
 	}
 
-	var columnData = make([]interface{}, len(columnNames))
-	var scanArgs = make([]interface{}, len(columnNames))
+	columnData := make([]interface{}, len(columnNames))
+	scanArgs := make([]interface{}, len(columnNames))
 	for i := range columnData {
 		scanArgs[i] = &columnData[i]
 	}
 
 	nonfatalErrors := []error{}
-
 	metrics := make([]prometheus.Metric, 0)
-
 	hasRow := false
+
 	for rows.Next() {
 		hasRow = true
 		err = rows.Scan(scanArgs...)
@@ -83,19 +73,14 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 			return []prometheus.Metric{}, []error{}, errors.New(fmt.Sprintln("Error retrieving rows:", namespace, err))
 		}
 
-		// Get the label values for this row.
 		labels := make([]string, len(mapping.labels))
 		for idx, label := range mapping.labels {
 			labels[idx], _ = dbToString(columnData[columnIdx[label]])
 		}
 
-		// Loop over column names, and match to scan data. Unknown columns
-		// will be filled with an untyped metric number *if* they can be
-		// converted to float64s. NULLs are allowed and treated as NaN.
 		for idx, columnName := range columnNames {
 			var metric prometheus.Metric
 			if metricMapping, ok := mapping.columnMappings[columnName]; ok {
-				// Is this a metricy metric?
 				if metricMapping.discard {
 					continue
 				}
@@ -148,27 +133,23 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 						continue
 					}
 
-					metric = prometheus.MustNewConstHistogram(
-						metricMapping.desc,
-						count, sum, buckets,
-						labels...,
-					)
+					metric = prometheus.MustNewConstHistogram(metricMapping.desc, count, sum, buckets, labels...)
 				} else {
 					value, ok := dbToFloat64(columnData[idx])
 					if !ok {
 						nonfatalErrors = append(nonfatalErrors, errors.New(fmt.Sprintln("Unexpected error parsing column: ", namespace, columnName, columnData[idx])))
 						continue
 					}
-					// Generate the metric
 					metric = prometheus.MustNewConstMetric(metricMapping.desc, metricMapping.vtype, value, labels...)
 				}
 			} else {
-				// Unknown metric. Report as untyped if scan to float64 works, else note an error too.
-				metricLabel := fmt.Sprintf("%s_%s", namespace, columnName)
-				desc := prometheus.NewDesc(metricLabel, fmt.Sprintf("Unknown metric from %s", namespace), mapping.labels, server.labels)
+				desc := prometheus.NewDesc(
+					fmt.Sprintf("%s_%s", namespace, columnName),
+					fmt.Sprintf("Unknown metric from %s", namespace),
+					mapping.labels,
+					server.labels,
+				)
 
-				// Its not an error to fail here, since the values are
-				// unexpected anyway.
 				value, ok := dbToFloat64(columnData[idx])
 				if !ok {
 					nonfatalErrors = append(nonfatalErrors, errors.New(fmt.Sprintln("Unparseable column type - discarding: ", namespace, columnName, err)))
@@ -181,42 +162,13 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 	}
 
 	if !hasRow {
-		labels := make([]string, len(mapping.labels))
-		for i, label := range mapping.labels {
-			switch label {
-			case "node_id":
-				labels[i] = "0"
-			case "node_name":
-				labels[i] = "no-node"
-			case "type":
-				labels[i] = "unknown"
-			case "location":
-				labels[i] = ""
-			case "error":
-				labels[i] = "postgresql is down"
-			default:
-				labels[i] = "unknown"
-			}
-		}
-
-		for _, metricMapping := range mapping.columnMappings {
-			if metricMapping.discard || metricMapping.histogram {
-				continue
-			}
-
-			metric := prometheus.MustNewConstMetric(
-				metricMapping.desc,
-				metricMapping.vtype,
-				-1, // fallback 값
-				labels...,
-			)
-			metrics = append(metrics, metric)
-		}
+		fallback := fallbackMetrics(namespace, mapping, nil)
+		metrics = append(metrics, fallback...)
 	}
-	
-	
+
 	return metrics, nonfatalErrors, nil
 }
+
 
 // Iterate through all the namespace mappings in the exporter and run their
 // queries.
@@ -299,3 +251,41 @@ func queryNamespaceMappings(ch chan<- prometheus.Metric, server *Server) map[str
 
 	return namespaceErrors
 }
+
+func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.Metric {
+    labels := make([]string, len(mapping.labels))
+    for i, label := range mapping.labels {
+        switch label {
+        case "node_id":
+            labels[i] = "0"
+        case "node_name":
+            labels[i] = "no-node"
+        case "type":
+            labels[i] = "unknown"
+        case "location":
+            labels[i] = ""
+        case "error":
+            labels[i] = "postgresql is down"
+        default:
+            labels[i] = "unknown"
+        }
+    }
+
+    metrics := []prometheus.Metric{}
+    for _, metricMapping := range mapping.columnMappings {
+        if metricMapping.discard || metricMapping.histogram {
+            continue
+        }
+
+        metric := prometheus.MustNewConstMetric(
+            metricMapping.desc,
+            metricMapping.vtype,
+            -1,
+            labels...,
+        )
+        metrics = append(metrics, metric)
+    }
+
+    return metrics
+}
+
