@@ -273,7 +273,6 @@ func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.
         }
     }
 
-    logger.Info("fallbackMetrics labels 확인", "namespace", namespace, "labels", mapping.labels, "values", labels)
 
     metrics := make([]prometheus.Metric, 0)
     for _, metricMapping := range mapping.columnMappings {
