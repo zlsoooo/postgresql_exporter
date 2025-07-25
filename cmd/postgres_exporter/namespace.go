@@ -252,8 +252,6 @@ func queryNamespaceMappings(ch chan<- prometheus.Metric, server *Server) map[str
 	return namespaceErrors
 }
 
-logger.Info("fallbackMetrics columnMappings", "namespace", namespace, "columns", mapping.columnMappings)
-
 func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.Metric {
     labels := make([]string, len(mapping.labels))
     for i, label := range mapping.labels {
