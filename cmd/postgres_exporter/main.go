@@ -66,6 +66,24 @@ const (
 	// Metric label used for server identification.
 	serverLabelName = "server"
 )
+type FallbackCollector struct{}
+
+func (fc *FallbackCollector) Describe(ch chan<- *prometheus.Desc) {
+    ch <- prometheus.NewDesc(
+        "pg_exporter_status",
+        "PostgreSQL exporter status (1=up, 0=down)",
+        []string{"error"}, nil)
+}
+
+func (fc *FallbackCollector) Collect(ch chan<- prometheus.Metric) {
+    ch <- prometheus.MustNewConstMetric(
+        prometheus.NewDesc(
+            "pg_exporter_status",
+            "PostgreSQL exporter status (1=up, 0=down)",
+            []string{"error"}, nil),
+        prometheus.GaugeValue, 0, "connection failed",
+    )
+}
 
 func main() {
 	kingpin.Version(version.Print(exporterName))
@@ -124,6 +142,9 @@ func main() {
 	prometheus.MustRegister(versioncollector.NewCollector(exporterName))
 
 	prometheus.MustRegister(exporter)
+
+	prometheus.MustRegister(&FallbackCollector{})
+
 
 	// TODO(@sysadmind): Remove this with multi-target support. We are removing multiple DSN support
 	dsn := ""
