@@ -177,6 +177,51 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 			metrics = append(metrics, metric)
 		}
 	}
+
+
+	hasRow := false
+for rows.Next() {
+    hasRow = true
+    ...
+}
+
+// 결과가 없을 경우 fallback metric 수집
+if !hasRow {
+    labels := make([]string, len(mapping.labels))
+    for i, label := range mapping.labels {
+        switch label {
+        case "node_id":
+            labels[i] = "0"
+        case "node_name":
+            labels[i] = "no-node"
+        case "type":
+            labels[i] = "unknown"
+        case "location":
+            labels[i] = ""
+        case "error":
+            labels[i] = "postgresql is down"
+        default:
+            labels[i] = "unknown"
+        }
+    }
+
+    for columnName, metricMapping := range mapping.columnMappings {
+        if metricMapping.discard || metricMapping.histogram {
+            continue
+        }
+
+        metric := prometheus.MustNewConstMetric(
+            metricMapping.desc,
+            metricMapping.vtype,
+            -1, // fallback 값
+            labels...,
+        )
+        metrics = append(metrics, metric)
+    }
+}
+
+	
+
 	return metrics, nonfatalErrors, nil
 }
 
