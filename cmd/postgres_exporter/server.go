@@ -95,6 +95,9 @@ func (s *Server) Close() error {
 
 // Ping checks connection availability and possibly invalidates the connection if it fails.
 func (s *Server) Ping() error {
+	if s.db == nil {
+		return fmt.Errorf("database connection is nil")
+	}
 	if err := s.db.Ping(); err != nil {
 		if cerr := s.Close(); cerr != nil {
 			logger.Error("Error while closing non-pinging DB connection", "server", s, "err", cerr)
@@ -103,6 +106,7 @@ func (s *Server) Ping() error {
 	}
 	return nil
 }
+
 
 // String returns server's fingerprint.
 func (s *Server) String() string {
@@ -118,40 +122,35 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 
 	if !disableSettingsMetrics && s.master {
 		if err = querySettings(ch, s); err != nil {
-			err = fmt.Errorf("error retrieving settings: %s", err)
-			return err
+			return fmt.Errorf("error retrieving settings: %s", err)
 		}
 	}
 
-	errMap := queryNamespaceMappings(ch, s)
-
-	// If DB is unreachable, inject fallback metrics manually
-	if pingErr := s.Ping(); pingErr != nil {
-		logger.Warn("Database is down, injecting fallback metrics", "err", pingErr)
-
+	// DB 연결 체크 먼저 실행
+	if err := s.Ping(); err != nil {
+		// DB down → fallback metric 수집
 		for namespace, mapping := range s.metricMap {
 			fallback := fallbackMetrics(namespace, mapping)
 			for _, m := range fallback {
 				ch <- m
 			}
 		}
-
-		// Return nil to prevent scrape failure in Prometheus
+		// Scrape 자체는 성공으로 간주
 		return nil
 	}
 
+	// DB 연결되었을 경우 정상 쿼리 실행
+	errMap := queryNamespaceMappings(ch, s)
 	if len(errMap) == 0 {
 		return nil
 	}
-
-	// Log individual query errors
 	err = fmt.Errorf("queryNamespaceMappings errors encountered")
 	for namespace, errStr := range errMap {
 		err = fmt.Errorf("%s, namespace: %s error: %s", err, namespace, errStr)
 	}
-
 	return err
 }
+
 
 
 // Servers contains a collection of servers to Postgres.

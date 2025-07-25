@@ -253,39 +253,33 @@ func queryNamespaceMappings(ch chan<- prometheus.Metric, server *Server) map[str
 }
 
 func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.Metric {
-    labels := make([]string, len(mapping.labels))
-    for i, label := range mapping.labels {
-        switch label {
-        case "node_id":
-            labels[i] = "0"
-        case "node_name":
-            labels[i] = "no-node"
-        case "type":
-            labels[i] = "unknown"
-        case "location":
-            labels[i] = ""
-        case "error":
-            labels[i] = "postgresql is down"
-        default:
-            labels[i] = "unknown"
-        }
-    }
+	labels := make([]string, len(mapping.labels))
+	for i, label := range mapping.labels {
+		switch label {
+		case "node_id":
+			labels[i] = "0"
+		case "node_name":
+			labels[i] = "no-node"
+		case "type":
+			labels[i] = "unknown"
+		case "location":
+			labels[i] = ""
+		case "error":
+			labels[i] = "postgresql is down"
+		default:
+			labels[i] = "unknown"
+		}
+	}
 
-    metrics := []prometheus.Metric{}
-    for _, metricMapping := range mapping.columnMappings {
-        if metricMapping.discard || metricMapping.histogram {
-            continue
-        }
-
-        metric := prometheus.MustNewConstMetric(
-            metricMapping.desc,
-            metricMapping.vtype,
-            -1,
-            labels...,
-        )
-        metrics = append(metrics, metric)
-    }
-
-    return metrics
+	metrics := make([]prometheus.Metric, 0)
+	for _, metricMapping := range mapping.columnMappings {
+		if metricMapping.discard || metricMapping.histogram {
+			continue
+		}
+		m := prometheus.MustNewConstMetric(metricMapping.desc, metricMapping.vtype, -1, labels...)
+		metrics = append(metrics, m)
+	}
+	return metrics
 }
+
 
