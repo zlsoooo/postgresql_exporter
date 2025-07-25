@@ -272,8 +272,6 @@ func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.
             labels[i] = "unknown"
         }
     }
-
-
     metrics := make([]prometheus.Metric, 0)
     for _, metricMapping := range mapping.columnMappings {
         if metricMapping.discard || metricMapping.histogram {
