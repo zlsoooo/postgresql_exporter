@@ -259,7 +259,7 @@ func fallbackMetrics(namespace string, mapping MetricMapNamespace) []prometheus.
         case "node_id":
             labels[i] = "0"
         case "node_name":
-            labels[i] = "no-node"
+            labels[i] = "unknown"
         case "type":
             labels[i] = "unknown"
         case "location":
