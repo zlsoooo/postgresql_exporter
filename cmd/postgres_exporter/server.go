@@ -124,9 +124,27 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 	}
 
 	errMap := queryNamespaceMappings(ch, s)
+
+	// If DB is unreachable, inject fallback metrics manually
+	if pingErr := s.Ping(); pingErr != nil {
+		logger.Warn("Database is down, injecting fallback metrics", "err", pingErr)
+
+		for namespace, mapping := range s.metricMap {
+			fallback := fallbackMetrics(namespace, mapping)
+			for _, m := range fallback {
+				ch <- m
+			}
+		}
+
+		// Return nil to prevent scrape failure in Prometheus
+		return nil
+	}
+
 	if len(errMap) == 0 {
 		return nil
 	}
+
+	// Log individual query errors
 	err = fmt.Errorf("queryNamespaceMappings errors encountered")
 	for namespace, errStr := range errMap {
 		err = fmt.Errorf("%s, namespace: %s error: %s", err, namespace, errStr)
@@ -134,6 +152,7 @@ func (s *Server) Scrape(ch chan<- prometheus.Metric, disableSettingsMetrics bool
 
 	return err
 }
+
 
 // Servers contains a collection of servers to Postgres.
 type Servers struct {
