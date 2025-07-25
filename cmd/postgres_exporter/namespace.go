@@ -199,7 +199,7 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 			}
 		}
 
-		for columnName, metricMapping := range mapping.columnMappings {
+		for _, metricMapping := range mapping.columnMappings {
 			if metricMapping.discard || metricMapping.histogram {
 				continue
 			}
