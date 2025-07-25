@@ -42,7 +42,7 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 		rows, err = server.db.Query(query)
 	}
 	if err != nil {
-		return fallbackMetrics(namespace, mapping, err), nil, nil
+		return fallbackMetrics(namespace, mapping), nil, nil
 	}
 	defer rows.Close()
 
@@ -162,7 +162,7 @@ func queryNamespaceMapping(server *Server, namespace string, mapping MetricMapNa
 	}
 
 	if !hasRow {
-		fallback := fallbackMetrics(namespace, mapping, nil)
+		fallback := fallbackMetrics(namespace, mapping)
 		metrics = append(metrics, fallback...)
 	}
 
