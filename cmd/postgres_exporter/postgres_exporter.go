@@ -425,6 +425,9 @@ type Exporter struct {
 	// servers are used to allow re-using the DB connection between scrapes.
 	// servers contains metrics map and query overrides.
 	servers *Servers
+
+	fallbackMetricMap map[string]MetricMapNamespace
+	
 }
 
 // ExporterOpt configures Exporter.
@@ -520,6 +523,22 @@ func NewExporter(dsn []string, opts ...ExporterOpt) *Exporter {
 
 	e.setupInternalMetrics()
 	e.servers = NewServers(ServerWithLabels(e.constantLabels))
+
+	if e.userQueriesPath != "" {
+        userQueriesData, err := os.ReadFile(e.userQueriesPath)
+        if err == nil {
+            // 9.1.0 또는 임의로 아무 버전이나(상관없음)
+            // dummyServer는 e.servers에서 아무 서버 한 개(e.servers.servers[dsn]) 또는 임시 객체
+            dummyServer := &Server{
+                labels: prometheus.Labels{},
+                metricMap: make(map[string]MetricMapNamespace),
+                queryOverrides: make(map[string]string),
+            }
+            // 커스텀 metricMap 생성
+            addQueries(userQueriesData, semver.MustParse("9.1.0"), dummyServer)
+            e.fallbackMetricMap = dummyServer.metricMap
+        }
+    }
 
 	return e
 }
@@ -692,6 +711,15 @@ func (e *Exporter) scrape(ch chan<- prometheus.Metric) {
 	switch {
 	case connectionErrorsCount >= len(dsns):
 		e.psqlUp.Set(0)
+		if e.fallbackMetricMap != nil {
+			for ns, mapping := range e.fallbackMetricMap {
+				metrics := fallbackMetrics(ns, mapping)
+				for _, m := range metrics {
+					ch <- m
+				}
+			}
+		}
+			
 	default:
 		e.psqlUp.Set(1) // Didn't fail, can mark connection as up for this scrape.
 	}
